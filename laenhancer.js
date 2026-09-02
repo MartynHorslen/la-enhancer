@@ -443,7 +443,12 @@ function checkIfNextVillage() {
             return true;
         }
     }
-    if (userset[SETTINGS.next_village_no_farms]) {
+    // "Switch village when no farms left" is unused and disabled here: its
+    // :visible scan re-checked every row in the table on every single farm
+    // keypress (a/b/c), which was the actual cause of the slowdown on large
+    // row counts. Left as dead code (not deleted) so a stored profile with
+    // this checkbox ticked can't silently re-enable the scan.
+    if (false && userset[SETTINGS.next_village_no_farms]) {
         if (window.top.$('#plunder_list tr:not(:first-child):visible').length == 0) {
             getNewVillage("n");
             return true;

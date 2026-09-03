@@ -26,6 +26,9 @@ var editingKey = false;
 var troubleshoot = false;
 var clearProfiles = false;
 var reason = [];
+// Cache for getNextVisibleRow's row scan (see that function for why).
+var rowScanCache = null;
+var rowScanIndex = 0;
 var keyToEdit;
 var current_units;
 var currentGameTime = getCurrentGameTime();
@@ -120,8 +123,22 @@ window.top.$.getScript(scriptURL + 'lib/jstorage.js', function () {
     });
     window.top.$.getScript(scriptURL + 'notify.js');
 });
+function injectPerfCss() {
+    // #plunder_list defaults to table-layout: auto, which forces the browser
+    // to recompute every column's width from every row's content whenever the
+    // table changes shape (e.g. every row.hide() during a farm run). On a
+    // large village list that's a full-table relayout per action. Fixing the
+    // layout algorithm makes column widths depend only on the first row, so
+    // hiding a row no longer triggers a table-wide recalculation.
+    if (window.top.document.getElementById('autoloot-perf-css')) return;
+    var style = window.top.document.createElement('style');
+    style.id = 'autoloot-perf-css';
+    style.textContent = '#plunder_list { table-layout: fixed; }';
+    window.top.document.head.appendChild(style);
+}
 function run() {
     console.log("run");
+    injectPerfCss();
     checkVersion();
     checkWorking();
     setVersion();
@@ -465,6 +482,10 @@ function applySettings() {
     }
 }
 function applyFilters() {
+    // Row visibility is about to be rebuilt (and rows may have been
+    // inserted/replaced since the last run), so the cached scan in
+    // getNextVisibleRow() is stale.
+    invalidateRowScanCache();
     window.top.$('#am_widget_Farm tr:gt(0)').each(function (i) {
         hideRow = checkRowToHide(window.top.$(this), userset);
         if (hideRow) {
@@ -533,6 +554,7 @@ function checkRowToHide(row, profileArray) {
     return false;
 }
 function resetTable() {
+    invalidateRowScanCache();
     window.top.$('#plunder_list tr').each(function (i) {
         window.top.$(this).show()
     });
@@ -1119,21 +1141,38 @@ function hotkeysOnOff() {
         turnOnHotkeys();
     });
 }
+function invalidateRowScanCache() {
+    rowScanCache = null;
+    rowScanIndex = 0;
+}
 function getNextVisibleRow() {
     // Cheap replacement for $("#plunder_list tr").filter(":visible").eq(1):
     // jQuery's :visible filter forces a layout read per row and scans the
     // whole table every time; with 150-200 rows and a farm run that fires
     // a keydown per target, that adds up to thousands of forced reflows.
-    // A plain style.display check with an early break avoids both costs.
-    var rows = document.querySelectorAll('#plunder_list tr');
-    var seen = 0;
-    for (var i = 0; i < rows.length; i++) {
-        if (rows[i].style.display !== 'none') {
-            seen++;
-            if (seen === 2) {
-                return window.top.$(rows[i]);
-            }
+    // A plain style.display check avoids that cost, but rescanning from
+    // row 0 on every keydown is still O(rows) per press: rows only ever
+    // get hidden (never re-shown) as a farm run progresses, so the leading
+    // run of already-hidden rows grows and grows, turning a full run over
+    // a large village list into O(rows^2) work. rowScanIndex is a cursor
+    // that only ever moves forward, so each row is inspected a constant
+    // number of times across the whole run instead of once per keydown.
+    // Row 0 is intentionally rescanned every time (cheap, single check):
+    // it's the one row this function's callers never hide, so treating it
+    // as "seen 1" without moving the cursor keeps that existing behavior.
+    if (!rowScanCache) {
+        rowScanCache = document.querySelectorAll('#plunder_list tr');
+        rowScanIndex = 1;
+    }
+    if (rowScanCache.length === 0 || rowScanCache[0].style.display === 'none') {
+        return window.top.$();
+    }
+    while (rowScanIndex < rowScanCache.length) {
+        var row = rowScanCache[rowScanIndex];
+        if (row.style.display !== 'none') {
+            return window.top.$(row);
         }
+        rowScanIndex++;
     }
     return window.top.$();
 }

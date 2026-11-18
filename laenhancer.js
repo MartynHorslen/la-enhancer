@@ -144,6 +144,7 @@ function run() {
     setVersion();
     makeItPretty();
     showSettings();
+    restoreHiders();
     turnOnHotkeys();
     hotkeysOnOff();
     if (userset[SETTINGS.enable_auto_run] != false) {
@@ -1547,7 +1548,7 @@ function hideStuffs() {
     window.top.$('#am_widget_Farm').find('h4').eq(0).append(window.top.$("<div class='vis' style='float:right;text-align:center;line-height:100%;width:12px;height:12px;margin:0px 0px 0px 0px;position:relative;background-color:tan;opacity:.7'><a href='#' num='1' onclick='uglyHider(window.top.$(this));return false;'>+</a></div>"));
     window.top.$('#plunder_list_filters').hide();
 }
-function uglyHider(linker) {
+function uglyHider(linker, restoring) {
     var basd;
     if (window.top.$('#settingsBody').length > 0) {
         basd = 2;
@@ -1566,6 +1567,33 @@ function uglyHider(linker) {
     } else if (parseInt(window.top.$(linker).attr('num')) == 2) {
         window.top.$('#settingsBody').toggle();
     }
+    if (!restoring) {
+        var state = readHiderState();
+        state[window.top.$(linker).attr('num')] = window.top.$(linker).text() === "+";
+        try { window.top.localStorage.setItem(HIDER_STATE_KEY, JSON.stringify(state)); } catch (e) {}
+    }
+}
+// Collapsed sections, remembered across reloads and village switches:
+// {"0": true, "2": false, ...} keyed by the hider link's num. A link
+// reading "+" means its section is collapsed.
+var HIDER_STATE_KEY = 'laenhancer_collapsed';
+function readHiderState() {
+    try {
+        return JSON.parse(window.top.localStorage.getItem(HIDER_STATE_KEY)) || {};
+    } catch (e) {
+        return {};
+    }
+}
+// Runs once the settings table and the other hider links exist, and flips
+// any section whose saved state differs from how it was just drawn.
+function restoreHiders() {
+    var state = readHiderState();
+    window.top.$('a[num]').each(function () {
+        var link = window.top.$(this);
+        var num = link.attr('num');
+        if (typeof state[num] !== 'boolean' || !/^[+-]$/.test(link.text())) return;
+        if ((link.text() === "+") !== state[num]) uglyHider(link, true);
+    });
 }
 
 
